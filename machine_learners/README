@@ -1,0 +1,19 @@
+These are the C5 machine learner bindings for python.
+
+Download C5 binaries from https://www.rulequest.com/see5-info.html and adjust the path in external.py.
+
+Usage:
+    from external import C5
+    
+    X = [[1,1,False], [90,4,False], [11,11,False]]
+    y = ["Class 1", "Class 2", "Class 2"]
+    
+    ml = C5(["Class 1","Class 2"],
+            ["Length","Age","Is human"],
+            [int, int, bool]
+           )
+    ml.fit(X,y)
+    ml.score(X,y)
+    ml.printErrorMatrix()
+    ml.getAccuracy()
+    
