@@ -5,13 +5,15 @@ Download C5 binaries from https://www.rulequest.com/see5-info.html and adjust th
 Usage:
     from external import C5
     
-    X = [[1,1,False], [90,4,False], [11,11,False]]
+    classes = ["Class 1","Class 2"]
+    featureNames = ["Length","Age","Is corrupted"]
+    featureTypes = [int,      int,  [True,False]]
+    X =            [[1,         1,  False], 
+                    [90,        4,  False], 
+                    [11,        11, False]]
     y = ["Class 1", "Class 2", "Class 2"]
     
-    ml = C5(["Class 1","Class 2"],
-            ["Length","Age","Is human"],
-            [int, int, bool]
-           )
+    ml = C5(classes, featureNames, featureTypes)
     ml.fit(X,y)
     ml.score(X,y)
     ml.printErrorMatrix()
