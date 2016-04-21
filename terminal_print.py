@@ -1,3 +1,5 @@
+import sys
+
 class TerminalPrint(object):
     """
     Printing manager for terminal output
