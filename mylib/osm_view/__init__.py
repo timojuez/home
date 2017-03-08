@@ -16,59 +16,84 @@ import os, shutil
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
-def _tget(t,i,default=None):
-    """ return element #i from tuple t. If t[i] does not exist, return default. """
-    try:
-        return t[i]
-    except IndexError:
-        return default
-
-def osmView(points=[], centre=(51.0666351,13.7418938), zoom=14, lines=[], arrows=[]):
+def osmView(points=[], centre=None, zoom=14, lines=[], arrows=[], circles=[]):
     """
-    points list, Coordinates [(lat float, lon float, name String, colour_as_hex String)]
+    points list, [{lat: float, lon: float, name: String, colour: String}]
+    circles list, [{lat: float, lon: float, r: float, name: String, colour: String}]
+    lines list, [{lat1: float, lon1: float, lat2: float, lon2: float, name: String, colour: String}]
+    arrows list, [{lat1: float, lon1: float, lat2: float, lon2: float, name: String, colour: String}]
     centre Coordinates
     zoom int
     lines list, [(lat1 float, lon1 float, lat2 float, lon2 float, name String, colour_as_hex String)]
     returns html String
     """
     
+    def clean_e(e):
+        e["colour"] = e.get("colour","#0099ff")
+        e["name"] = unicode(e.get("name","")).replace("\n","\\n")
+        e["r"] = e.get("r",100)
+        return e
     markersHtml = []
+    
+    if centre is None:
+            e = (points+lines+arrows+circles)[0]
+            if "lat" in e:
+                centre=(e["lat"],e["lon"])
+            elif "lat1" in e:
+                centre=(e["lat1"],e["lon1"])
+    
+    # points:
     markersHtml.extend(["""
       (function (){
       var point = new ol.Feature({
-        geometry: new ol.geom.Point(ol.proj.fromLonLat([%f, %f])),
-        name: "%s"
+        geometry: new ol.geom.Point(ol.proj.fromLonLat([%(lon)f, %(lat)f])),
+        name: "%(name)s"
       });
       point.setStyle(new ol.style.Style({
         image: new ol.style.Icon(/** @type {olx.style.IconOptions} */ ({
-          color: '%s',
+          color: '%(colour)s',
           crossOrigin: 'anonymous',
           src: 'https://openlayers.org/en/v4.0.1/examples/data/dot.png'
         }))
       }));
       return point;
       })()
-    """%(e[1],e[0],unicode(_tget(e,2,"")).replace("\n","<br/>"),_tget(e,3,"#0099ff")) for e in points])
+    """%clean_e(e) for e in points])
+    
+    # circles:
     markersHtml.extend(["""
       (function (){
       var point = new ol.Feature({
-        geometry: new ol.geom.LineString([ol.proj.fromLonLat([%f, %f]),ol.proj.fromLonLat([%f, %f])]),
-        name: "%s"
+        geometry: new ol.geom.Circle(ol.proj.fromLonLat([%(lon)f, %(lat)f]),%(r)d),
+        name: "%(name)s"
+      });
+      return point;
+      })()
+    """%clean_e(e) for e in circles])
+        
+    # lines:
+    markersHtml.extend(["""
+      (function (){
+      var point = new ol.Feature({
+        geometry: new ol.geom.LineString([ol.proj.fromLonLat([%(lon1)f, %(lat1)f]),ol.proj.fromLonLat([%(lon2)f, %(lat2)f])]),
+        name: "%(name)s"
       });
       point.setStyle(new ol.style.Style({
         stroke: new ol.style.Stroke({
-            color: '%s',
+            color: '%(colour)s',
             width: 2
         })
       }));
       return point;
       })()
-    """%(e[1],e[0],e[3],e[2],unicode(_tget(e,4,"")).replace("\n","<br/>"),_tget(e,5,"#0099ff")) for e in lines])
+    """%clean_e(e) for e in lines])
+    
+    # arrows:
     markersHtml.extend(["""
       (function (){
 
-      var start = ol.proj.fromLonLat([%f, %f])
-      var end   = ol.proj.fromLonLat([%f, %f])
+      var start = ol.proj.fromLonLat([%(lon1)f, %(lat1)f])
+      var end   = ol.proj.fromLonLat([%(lon2)f, %(lat2)f])
       var dx = end[0] - start[0];
       var dy = end[1] - start[1];
       var rotation = Math.atan2(dy, dx);
@@ -76,26 +101,33 @@ def osmView(points=[], centre=(51.0666351,13.7418938), zoom=14, lines=[], arrows
       var line = new ol.geom.LineString([start,end]);
       var point = new ol.Feature({
         geometry: line,
-        name: "%s"
+        name: "%(name)s"
       });
-      point.setStyle([new ol.style.Style({
-        stroke: new ol.style.Stroke({
-            color: '%s',
-            width: 2
-        }),
-      }),
-      new ol.style.Style({
-            geometry: new ol.geom.Point(end),
-            image: new ol.style.Icon({
+      iconStyle = new ol.style.Icon({
               src: 'arrow_blue.png',
               anchor: [0.75, 0.5],
               rotateWithView: true,
-              rotation: -rotation
-            })
-      })]);
+              rotation: -rotation,
+              scale: 1.0
+      })
+      point.setStyle([
+      //styles.push([
+        new ol.style.Style({
+            stroke: new ol.style.Stroke({
+                color: '%(colour)s',
+                width: 2
+            }),
+        }),
+        new ol.style.Style({
+            geometry: new ol.geom.Point(end),
+            image: iconStyle
+        })
+      ]);
+      iconStyles.push(iconStyle);
       return point;
       })()
-    """%(e[1],e[0],e[3],e[2],unicode(_tget(e,4,"")).replace("\n","<br/>"),_tget(e,5,"#0099ff")) for e in arrows])
+    """%clean_e(e) for e in arrows])
+
     if len(arrows) > 0:
         for f in ['arrow_blue.png']:
             shutil.copyfile(os.path.join(dir_path,f),os.path.join(os.getcwd(),f))
@@ -143,10 +175,21 @@ html = """
   <body>
     <div id="map" class="map"><div id="info"></div></div>
     <script>
+      var iconStyles = [];
+      var styles = [];
+      
       var vectorSource = new ol.source.Vector({
         features: [%s]
       });
 
+      var stylesFunction = function(feature, resolution) {
+        var scale = 2;
+        for(var iconStyle in iconStyles) {
+            iconStyle.setScale(scale);
+        }
+        return styles;
+      }
+      
       var map = new ol.Map({
         layers: [
             new ol.layer.Tile({
@@ -154,7 +197,7 @@ html = """
             }),
             new ol.layer.Vector({
                 source: vectorSource,
-                //style: styles
+                //style: stylesFunction
             })            
         ],
         target: document.getElementById('map'),
@@ -202,8 +245,10 @@ map.on('pointermove', function(evt) {
 
 if __name__ == "__main__":
     with open("map.html","w") as f:
-        points=[(51.0666351,13.7418938,"Test"),(51.0666351,13.7418938,"Test2")]
+        points=[dict(lat=51.0666351,lon=13.7418938,name="Test"),dict(lat=51.0666351,lon=13.7418938,name="Test2")]
+        circles=[dict(lat=51.0666351,lon=13.7418938,name="Test",r=5e3),dict(lat=51.0666351,lon=13.7418938,name="Test2")]
         points=[]
-        lines=[(51.0666351,13.7418938,51.0666351,12.7418938,"Test2")]
-        f.write(osmView(points=points,arrows=lines))
+        lines=[dict(lat1=51.0666351,lon1=13.7418938,lat2=51.0666351,lon2=12.7418938,name="Test2")]
+        lines=[]
+        f.write(osmView(circles=circles,arrows=lines))
     
