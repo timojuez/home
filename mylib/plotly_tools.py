@@ -13,7 +13,7 @@ def _plotly(data, *args, **xargs):
     return _plotly2(Figure(data=data),*args,**xargs)
 
 def _plotly2(figure, table, title=None, xTitle=None, yTitle=None, zTitle=None, filename=None, scene=None, xRange=None, yRange=None, 
-            image=False,**layoutargs):
+            image=False, showlegend=None, **layoutargs):
         #if image: ext="png"
         #else: ext="html"
         if exportmode:
@@ -25,7 +25,8 @@ def _plotly2(figure, table, title=None, xTitle=None, yTitle=None, zTitle=None, f
             filename = os.path.join(dir_,'plot_%s.%s'%(table,ext))
         print("%s -> %s"%(table,filename))
         if title is None: title=table
-        layout = dict(title=title, xaxis=dict(), yaxis=dict(), **layoutargs)
+        elif title == "": title=None
+        layout = dict(title=title, xaxis=dict(), yaxis=dict(), showlegend=showlegend, **layoutargs)
         if scene: layout["scene"] = scene
         if xTitle: layout["xaxis"]["title"] = xTitle
         if yTitle: layout["yaxis"]["title"] = yTitle
