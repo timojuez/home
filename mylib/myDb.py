@@ -49,14 +49,17 @@ class DB(object):
     
     def rollback(self): self.dbconnection.rollback() 
     
-    def execute(self, *args, **kwargs):
+    def execute(self, query, *args, **kwargs):
         """ 
         this function is being replaced by cursor.execute 
         """
+        self.lastquery = query
         try:
-            self.cursor.execute(*args,**kwargs)
+            self.cursor.execute(query,*args,**kwargs)
         except Exception as e:
-            if len(args)>0: print(args[0])
+            print(query)
+            if len(args)>0: print(args)
+            if len(kwargs)>0: print(kwargs)
             raise
 
     query=execute
@@ -118,10 +121,11 @@ class ExtendedDB(DB):
     def execute_program(self, queries):
         queries = re.sub(re.compile("/\*.*?\*/",re.DOTALL ) ,"" ,queries) # remove all occurance streamed comments (/*COMMENT */) from string # FIXME: dont replace in string
         queries = re.sub(re.compile("--.*?\n" ) ,"" ,queries) # remove all occurance singleline comments (//COMMENT\n ) from string
-
-        queries = queries.split(";")[:-1]
+        
+        queries = [e[0] for e in re.findall('([^\;\$]*(\$\$.*\$\$)?[^\;\$]*\;)',queries,flags=re.S)]
+        #queries = queries.split(";")[:-1]
         for i,q in enumerate(queries):
-            self.query(q)
+            self.query(q.rsplit(";",1)[0])
             
     def get(self,*args,**xargs):
         self.query(*args,**xargs)
@@ -132,4 +136,19 @@ class ExtendedDB(DB):
     def execute_file(self, path):
         with open(path) as f:
             return self.execute_program(f.read())
+            
+    def getLen(self, query):
+        return int(self.get("SELECT count(*) FROM (%s) AS y"%query))
+        
+    def fetcheach(self, query, *args, **xargs):
+        self.query(query, *args, **xargs)
+        r = self.cursor.fetchone()
+        while r is not None:
+            yield r
+            if self.lastquery != query: raise Exception("User fired another query while iterating DB.fetch().")
+            r = self.cursor.fetchone()
+
+    def fetchall(self, *args, **xargs):
+        self.query(*args, **xargs)
+        return self.cursor.fetchall()
         
