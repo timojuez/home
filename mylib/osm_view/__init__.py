@@ -16,7 +16,13 @@ import os, shutil
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
-def osmView(points=[], centre=None, zoom=14, lines=[], arrows=[], circles=[]):
+PROJECTIONS = {
+    "EPSG:31469":"+proj=tmerc +lat_0=0 +lon_0=15 +k=1 +x_0=5500000 +y_0=0 +ellps=bessel +datum=potsdam +units=m +no_defs ", # Gauss-Krüger Zone 5
+    "EPSG:3035":"+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs ", # Lambert equal area
+    "EPSG:3857":"+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext  +no_defs" # Web Mercator
+}
+
+def osmView(points=[], centre=None, zoom=14, lines=[], arrows=[], circles=[], proj4=PROJECTIONS["EPSG:3857"]):
     """
     points list, [{lat: float, lon: float, name: String, colour: String}]
     circles list, [{lat: float, lon: float, r: float, name: String, colour: String}]
@@ -27,11 +33,17 @@ def osmView(points=[], centre=None, zoom=14, lines=[], arrows=[], circles=[]):
     lines list, [(lat1 float, lon1 float, lat2 float, lon2 float, name String, colour_as_hex String)]
     returns html String
     """
+    projparams = proj4
+    mapProj = "myproj"
+    vectorProj = "myproj"
     
     def clean_e(e):
+        if isinstance(e,tuple): raise Exception("Coordinates must be dicts.")
+        e = dict(e)
         e["colour"] = e.get("colour","#0099ff")
         e["name"] = unicode(e.get("name","")).replace("\n","\\n")
         e["r"] = e.get("r",100)
+        e["proj"] = "'%s'"%e.get("proj",vectorProj)
         return e
     markersHtml = []
     
@@ -46,7 +58,7 @@ def osmView(points=[], centre=None, zoom=14, lines=[], arrows=[], circles=[]):
     markersHtml.extend(["""
       (function (){
       var point = new ol.Feature({
-        geometry: new ol.geom.Point(ol.proj.fromLonLat([%(lon)f, %(lat)f])),
+        geometry: new ol.geom.Point(ol.proj.fromLonLat([%(lon)f, %(lat)f],%(proj)s)),
         name: "%(name)s"
       });
       point.setStyle(new ol.style.Style({
@@ -64,7 +76,7 @@ def osmView(points=[], centre=None, zoom=14, lines=[], arrows=[], circles=[]):
     markersHtml.extend(["""
       (function (){
       var point = new ol.Feature({
-        geometry: new ol.geom.Circle(ol.proj.fromLonLat([%(lon)f, %(lat)f]),%(r)d),
+        geometry: new ol.geom.Circle(ol.proj.fromLonLat([%(lon)f, %(lat)f],%(proj)s),%(r)d),
         name: "%(name)s"
       });
       return point;
@@ -75,7 +87,7 @@ def osmView(points=[], centre=None, zoom=14, lines=[], arrows=[], circles=[]):
     markersHtml.extend(["""
       (function (){
       var point = new ol.Feature({
-        geometry: new ol.geom.LineString([ol.proj.fromLonLat([%(lon1)f, %(lat1)f]),ol.proj.fromLonLat([%(lon2)f, %(lat2)f])]),
+        geometry: new ol.geom.LineString([ol.proj.fromLonLat([%(lon1)f, %(lat1)f],%(proj)s),ol.proj.fromLonLat([%(lon2)f, %(lat2)f],%(proj)s)]),
         name: "%(name)s"
       });
       point.setStyle(new ol.style.Style({
@@ -92,8 +104,8 @@ def osmView(points=[], centre=None, zoom=14, lines=[], arrows=[], circles=[]):
     markersHtml.extend(["""
       (function (){
 
-      var start = ol.proj.fromLonLat([%(lon1)f, %(lat1)f])
-      var end   = ol.proj.fromLonLat([%(lon2)f, %(lat2)f])
+      var start = ol.proj.fromLonLat([%(lon1)f, %(lat1)f],%(proj)s)
+      var end   = ol.proj.fromLonLat([%(lon2)f, %(lat2)f],%(proj)s)
       var dx = end[0] - start[0];
       var dy = end[1] - start[1];
       var rotation = Math.atan2(dy, dx);
@@ -131,7 +143,7 @@ def osmView(points=[], centre=None, zoom=14, lines=[], arrows=[], circles=[]):
     if len(arrows) > 0:
         for f in ['arrow_blue.png']:
             shutil.copyfile(os.path.join(dir_path,f),os.path.join(os.getcwd(),f))
-    return html%(",".join(markersHtml),centre[1],centre[0],zoom)
+    return html%dict(features=",".join(markersHtml),lon=centre[1],lat=centre[0],proj=mapProj,zoom=zoom,scripthead="",projparams=projparams)
         
 
 html = """
@@ -143,10 +155,13 @@ html = """
     <!-- The line below is only needed for old environments like Internet Explorer and Android 4.x -->
     <script src="https://cdn.polyfill.io/v2/polyfill.min.js?features=requestAnimationFrame,Element.prototype.classList,URL"></script>    
     <script src="https://openlayers.org/en/v4.0.1/build/ol.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.4.3/proj4.js"></script>
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
     <style>
 #map {
-  position: relative;
+  position: absolute;
+  width:100%%;
+  height:100%%;
 }
 
 #info {
@@ -175,11 +190,14 @@ html = """
   <body>
     <div id="map" class="map"><div id="info"></div></div>
     <script>
+      %(scripthead)s
+      proj4.defs('myproj','%(projparams)s');
+      
       var iconStyles = [];
       var styles = [];
       
       var vectorSource = new ol.source.Vector({
-        features: [%s]
+        features: [%(features)s],
       });
 
       var stylesFunction = function(feature, resolution) {
@@ -202,8 +220,9 @@ html = """
         ],
         target: document.getElementById('map'),
         view: new ol.View({
-          center: ol.proj.fromLonLat([%f,%f]),
-          zoom: %d
+          center: ol.proj.fromLonLat([%(lon)f,%(lat)f],'%(proj)s'),
+          zoom: %(zoom)d,
+          projection:'%(proj)s'
         })
       });
       
