@@ -118,7 +118,7 @@ class Street(Common):
         return ret
 
 
-class Polygon(Common):
+class SimplePolygon(Common):
     """
     This is a polygon shaped house, optionally with one or more polygon shaped inner gardens.
     Considers multipolygons.
@@ -130,26 +130,20 @@ class Polygon(Common):
     """
     _cache=OrderedDict()
     
-    @classmethod
-    def getPolygonByCoords(cls, overpass, lat, lon):
-        for p in Overpass.getBuildingsByBB(overpass, lat, lon):
-            if p.isInPolygon(lat,lon):
-                return p
-
     def __new__(cls, wayId=None, *args, **xargs):
         if wayId in cls._cache:
             return cls._cache[wayId]
         if len(cls._cache) >= POLYGON_CACHE:
             cls._cache.popitem(False)
-        p=super(Polygon,cls).__new__(cls, wayId, *args, **xargs)
+        p=super(SimplePolygon,cls).__new__(cls, wayId, *args, **xargs)
         if wayId is not None: cls._cache[wayId] = p
         return p
         
-    def __init__(self, wayId=None, b):
+    def __init__(self, ways, wayId=None):
         self.wayId = wayId
-        ways = self._getAllWays(b["outer"]+b["inner"], remove_vertical=True)
-        del b
-        self._setPolygonFunction(ways)
+        ways_ = self._getAllWays(ways, remove_vertical=True)
+        del ways
+        self._setPolygonFunction(ways_)
         
     def _setPolygonFunction(self, ways):
         """
@@ -256,6 +250,21 @@ class Polygon(Common):
             ret.append((lat_ap2,lon_ap2))
         return ret
         
+
+class OSM_Polygon(SimplePolygon):
+
+    def __init__(self, wayId, b):
+        super(OSM_Polygon,self).__init__(wayId=wayId, ways=b["outer"]+b["inner"])
+
+    @classmethod
+    def getPolygonByCoords(cls, overpass, lat, lon):
+        for p in Overpass.getBuildingsByBB(overpass, lat, lon):
+            if p.isInPolygon(lat,lon):
+                return p
+
+
+Polygon = OSM_Polygon
+
         
 class OSM_Error(Exception): 
 
